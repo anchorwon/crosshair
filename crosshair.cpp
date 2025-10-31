@@ -81,6 +81,7 @@ const UINT TIMER_SWITCH_ANIM = 100;
 float g_resetIconRotation = 0.0f;  // 当前旋转角度
 bool g_resetIconAnimating = false;  // 是否正在旋转动画
 const UINT TIMER_RESET_ANIM = 101;
+const UINT TIMER_KEEP_TOPMOST = 102;  // 保持置顶定时器
 const float RESET_ROTATION_SPEED = 30.0f;  // 每帧旋转角度
 const float SWITCH_ANIM_SPEED = 0.2f;  // 动画速度（提高速度）
 const float SWITCH_ANIM_DAMPING = 0.85f;  // 阻尼系数（平滑过渡）
@@ -186,7 +187,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     
     // 创建窗口（隐藏、无边框、置顶、透明）
     g_hwndCrosshair = CreateWindowEx(
-        WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_TOPMOST | WS_EX_TOOLWINDOW,
+        WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE,
         CLASS_NAME,
         L"屏幕准心",
         WS_POPUP,
@@ -204,6 +205,9 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     
     // 设置分层窗口属性（透明背景）
     SetLayeredWindowAttributes(g_hwndCrosshair, RGB(0, 0, 0), 0, LWA_COLORKEY);
+    
+    // 启动置顶保持定时器（每500ms强制置顶一次，兼容全屏游戏）
+    SetTimer(g_hwndCrosshair, TIMER_KEEP_TOPMOST, 500, nullptr);
     
     // 加载准心图片
     LoadCrosshairImages();
@@ -375,7 +379,20 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             return 0;
         }
         
+        case WM_TIMER: {
+            if (wParam == TIMER_KEEP_TOPMOST) {
+                // 定期强制窗口置顶（对抗全屏游戏）
+                if (g_bVisible && IsWindowVisible(hwnd)) {
+                    SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0,
+                        SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
+                }
+            }
+            return 0;
+        }
+        
         case WM_DESTROY:
+            // 清理定时器
+            KillTimer(hwnd, TIMER_KEEP_TOPMOST);
             PostQuitMessage(0);
             return 0;
     }
