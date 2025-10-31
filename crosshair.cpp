@@ -30,6 +30,9 @@ NOTIFYICONDATA g_nid = {0};
 Image* g_pCurrentImage = nullptr;
 bool g_bVisible = true;  // 默认显示准心
 
+// 配置文件路径
+std::wstring g_configPath;
+
 // 准心图片映射
 struct CrosshairInfo {
     std::wstring name;
@@ -116,6 +119,8 @@ void ShowContextMenu(HWND hwnd);
 void SetCrosshair(int index);
 void ToggleVisibility();
 void CenterWindow(HWND hwnd);
+void SaveConfig();
+void LoadConfig();
 std::wstring GetGroupName(const std::wstring& name);
 HICON CreateIconFromImage(Image* img);
 void CreatePreviewWindow();
@@ -129,6 +134,16 @@ void AdjustCrosshairScale(float delta);  // 调整准心缩放
 // 主函数
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow) {
     g_hInst = hInstance;
+    
+    // 获取程序所在目录并设置配置文件路径
+    wchar_t exePath[MAX_PATH];
+    GetModuleFileName(nullptr, exePath, MAX_PATH);
+    std::wstring exeDir = exePath;
+    size_t lastSlash = exeDir.find_last_of(L"\\/");
+    if (lastSlash != std::wstring::npos) {
+        exeDir = exeDir.substr(0, lastSlash);
+    }
+    g_configPath = exeDir + L"\\crosshair_config.ini";
     
     // 初始化 GDI+
     GdiplusStartupInput gdiplusStartupInput;
@@ -216,10 +231,13 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
                 MB_ICONWARNING);
         }
     } else {
-        // 设置默认准心
-        SetCrosshair(0);
+        // 加载保存的配置
+        LoadConfig();
         
-        // 默认显示准心
+        // 设置准心（使用配置中的索引）
+        SetCrosshair(g_currentIndex);
+        
+        // 显示准心（根据配置中的显示状态）
         if (g_bVisible) {
             ShowWindow(g_hwndCrosshair, SW_SHOW);
             SetWindowPos(g_hwndCrosshair, HWND_TOPMOST, 0, 0, 0, 0, 
@@ -315,6 +333,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
                 if (colorIndex >= 0 && colorIndex < g_colors.size()) {
                     g_currentColorIndex = colorIndex;
                     ApplyColorToCrosshair();
+                    SaveConfig();  // 保存配置
                 }
             }
             return 0;
@@ -524,6 +543,9 @@ void SetCrosshair(int index) {
     InvalidateRect(g_hwndCrosshair, nullptr, TRUE);
     UpdateWindow(g_hwndCrosshair);  // 立即更新窗口
     
+    // 保存配置
+    SaveConfig();
+    
     // 不再显示通知，避免打扰用户
 }
 
@@ -539,6 +561,9 @@ void ToggleVisibility() {
         InvalidateRect(g_hwndCrosshair, nullptr, TRUE);
         UpdateWindow(g_hwndCrosshair);
     }
+    
+    // 保存配置
+    SaveConfig();
     
     // 如果预览窗口打开，启动开关动画并刷新显示
     if (g_hwndPreview && g_bPreviewWindowVisible) {
@@ -1213,6 +1238,8 @@ LRESULT CALLBACK PreviewWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
                 if (distanceSquared <= radiusSquared) {
                     // 选中这个颜色
                     g_currentColorIndex = i;
+                    // 保存配置
+                    SaveConfig();
                     // 立即刷新预览窗口显示新颜色
                     InvalidateRect(hwnd, nullptr, TRUE);
                     UpdateWindow(hwnd);
@@ -1544,5 +1571,56 @@ void AdjustCrosshairScale(float delta) {
     if (g_hwndPreview && g_bPreviewWindowVisible) {
         InvalidateRect(g_hwndPreview, nullptr, FALSE);
     }
+    
+    // 保存配置
+    SaveConfig();
+}
+
+// 保存配置到INI文件
+void SaveConfig() {
+    if (g_configPath.empty()) return;
+    
+    // 保存当前准心索引
+    WritePrivateProfileString(L"Settings", L"CurrentIndex", 
+        std::to_wstring(g_currentIndex).c_str(), g_configPath.c_str());
+    
+    // 保存当前颜色索引
+    WritePrivateProfileString(L"Settings", L"ColorIndex", 
+        std::to_wstring(g_currentColorIndex).c_str(), g_configPath.c_str());
+    
+    // 保存缩放比例（保存为百分比整数）
+    WritePrivateProfileString(L"Settings", L"Scale", 
+        std::to_wstring((int)(g_crosshairScale * 100)).c_str(), g_configPath.c_str());
+    
+    // 保存显示状态
+    WritePrivateProfileString(L"Settings", L"Visible", 
+        g_bVisible ? L"1" : L"0", g_configPath.c_str());
+}
+
+// 从INI文件加载配置
+void LoadConfig() {
+    if (g_configPath.empty()) return;
+    
+    // 加载当前准心索引
+    int index = GetPrivateProfileInt(L"Settings", L"CurrentIndex", 0, g_configPath.c_str());
+    if (index >= 0 && index < g_crosshairs.size()) {
+        g_currentIndex = index;
+    }
+    
+    // 加载当前颜色索引
+    int colorIndex = GetPrivateProfileInt(L"Settings", L"ColorIndex", 0, g_configPath.c_str());
+    if (colorIndex >= 0 && colorIndex < g_colors.size()) {
+        g_currentColorIndex = colorIndex;
+    }
+    
+    // 加载缩放比例
+    int scale = GetPrivateProfileInt(L"Settings", L"Scale", 100, g_configPath.c_str());
+    g_crosshairScale = scale / 100.0f;
+    if (g_crosshairScale < SCALE_MIN) g_crosshairScale = SCALE_MIN;
+    if (g_crosshairScale > SCALE_MAX) g_crosshairScale = SCALE_MAX;
+    
+    // 加载显示状态
+    int visible = GetPrivateProfileInt(L"Settings", L"Visible", 1, g_configPath.c_str());
+    g_bVisible = (visible != 0);
 }
 
