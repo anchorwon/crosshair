@@ -1,0 +1,7 @@
+// crosshair.rc - 资源文件
+// 将图标嵌入到可执行文件中
+
+#include <windows.h>
+
+// 主程序图标
+IDI_MAINICON ICON "logo.ico"
